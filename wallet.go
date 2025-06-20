@@ -8,10 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
-	"math/big"
 )
-
-
 
 // Wallet 結構
 type Wallet struct {
@@ -30,7 +27,7 @@ func NewWallet() *Wallet {
 
 	address := generateAddress(pubKey)
 
-	fmt.Println("wallet created") 
+	fmt.Println("wallet created")
 
 	return &Wallet{
 		PrivateKey: private,
@@ -55,32 +52,4 @@ func SignTransaction(tx Transaction, privKey *ecdsa.PrivateKey) (string, error) 
 	}
 	signature := append(r.Bytes(), s.Bytes()...)
 	return hex.EncodeToString(signature), nil
-}
-
-// 驗證交易簽章是否合法
-func VerifyTransactionSignature(tx Transaction) bool {
-	msg := txMessage(tx)
-	hash := sha256.Sum256([]byte(msg))
-
-	pubKeyBytes, err := hex.DecodeString(tx.PubKey)
-	if err != nil || len(pubKeyBytes) != 64 {
-		return false
-	}
-
-	x := new(big.Int).SetBytes(pubKeyBytes[:32])
-	y := new(big.Int).SetBytes(pubKeyBytes[32:])
-	pubKey := ecdsa.PublicKey{Curve: elliptic.P256(), X: x, Y: y}
-
-	sigBytes, err := hex.DecodeString(tx.Signature)
-	if err != nil || len(sigBytes) < 64 {
-		return false
-	}
-	r := new(big.Int).SetBytes(sigBytes[:32])
-	s := new(big.Int).SetBytes(sigBytes[32:])
-	return ecdsa.Verify(&pubKey, hash[:], r, s)
-}
-
-// 把交易內容序列化（不含簽章與公鑰）
-func txMessage(tx Transaction) string {
-	return tx.From + tx.To + fmt.Sprintf("%.4f", tx.Amount)
 }

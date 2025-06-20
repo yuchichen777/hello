@@ -18,12 +18,12 @@ import (
 )
 
 type Block struct {
-	Index     int         `json:"index"`
-	Timestamp string      `json:"timestamp"`
+	Index     int           `json:"index"`
+	Timestamp string        `json:"timestamp"`
 	Txs       []Transaction `json:"txs"`
-	PrevHash  string      `json:"prevHash"`
-	Hash      string      `json:"hash"`
-	Nonce     int         `json:"nonce"`
+	PrevHash  string        `json:"prevHash"`
+	Hash      string        `json:"hash"`
+	Nonce     int           `json:"nonce"`
 }
 
 type Transaction struct {
@@ -38,6 +38,7 @@ var (
 	blockchain []Block
 	balances   = make(map[string]float64)
 	txPool     []Transaction
+	peers      []string
 	dataFile   = "blockchain.json"
 )
 
@@ -138,7 +139,7 @@ func handleAddBlock(w http.ResponseWriter, r *http.Request) {
 	var tx Transaction
 	json.NewDecoder(r.Body).Decode(&tx)
 	if !isTransactionValid(tx) {
-		http.Error(w, "❌ 餘額不足或格式錯誤", 403)
+		http.Error(w, "❌ 餘額不足或格式錯誤", http.StatusForbidden)
 		return
 	}
 	txPool = append(txPool, tx)
@@ -170,6 +171,7 @@ func handleMine(w http.ResponseWriter, r *http.Request) {
 	}
 	txPool = []Transaction{}
 	saveBlockchainToFile()
+	broadcastBlock(newBlock)
 	json.NewEncoder(w).Encode(map[string]string{"message": "挖礦成功，已打包交易與獎勵"})
 }
 
@@ -187,6 +189,55 @@ func handleFaucet(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func handlePeers(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		URL string `json:"url"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	peers = append(peers, req.URL)
+	json.NewEncoder(w).Encode(map[string]string{"message": "已新增節點", "peer": req.URL})
+}
+
+func handleSync(w http.ResponseWriter, r *http.Request) {
+	for _, peer := range peers {
+		resp, err := http.Get(peer + "/blocks")
+		if err != nil {
+			continue
+		}
+		defer resp.Body.Close()
+		var remoteChain []Block
+		json.NewDecoder(resp.Body).Decode(&remoteChain)
+		if len(remoteChain) > len(blockchain) && isChainValid(remoteChain) {
+			blockchain = remoteChain
+			rebuildBalancesFromBlockchain()
+			saveBlockchainToFile()
+			log.Println("🔁 區塊鏈已同步自：", peer)
+		}
+	}
+	json.NewEncoder(w).Encode(map[string]string{"message": "同步完成"})
+}
+
+func handleReceive(w http.ResponseWriter, r *http.Request) {
+	var newBlock Block
+	json.NewDecoder(r.Body).Decode(&newBlock)
+	last := blockchain[len(blockchain)-1]
+	if newBlock.PrevHash == last.Hash && calculateHash(newBlock) == newBlock.Hash {
+		blockchain = append(blockchain, newBlock)
+		for _, tx := range newBlock.Txs {
+			applyTransaction(tx)
+		}
+		saveBlockchainToFile()
+		log.Println("📥 接收來自節點的新區塊：", newBlock.Index)
+	}
+}
+
+func broadcastBlock(block Block) {
+	for _, peer := range peers {
+		b, _ := json.Marshal(block)
+		http.Post(peer+"/receive", "application/json", strings.NewReader(string(b)))
+	}
+}
+
 type SignRequest struct {
 	From    string  `json:"from"`
 	To      string  `json:"to"`
@@ -196,16 +247,21 @@ type SignRequest struct {
 
 func handleSignTx(w http.ResponseWriter, r *http.Request) {
 	var req SignRequest
-	json.NewDecoder(r.Body).Decode(&req)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "❌ JSON 格式錯誤", http.StatusBadRequest)
+		return
+	}
+	// 將私鑰轉為 big.Int
 	privKeyBytes, _ := hex.DecodeString(req.PrivKey)
 	priv := new(ecdsa.PrivateKey)
-	priv.PublicKey.Curve = elliptic.P256()
+	priv.Curve = elliptic.P256()
 	priv.D = new(big.Int).SetBytes(privKeyBytes)
-	priv.PublicKey.X, priv.PublicKey.Y = elliptic.P256().ScalarBaseMult(privKeyBytes)
+	priv.PublicKey.X, priv.PublicKey.Y = priv.Curve.ScalarBaseMult(priv.D.Bytes())
+	priv.PublicKey.Curve = priv.Curve
 	pubKey := append(priv.PublicKey.X.Bytes(), priv.PublicKey.Y.Bytes()...)
 	address := sha256.Sum256(pubKey)
 	if req.From != fmt.Sprintf("%x", address[:20]) {
-		http.Error(w, "❌ From 地址與私鑰不符", 403)
+		http.Error(w, "❌ From 地址與私鑰不符", http.StatusForbidden)
 		return
 	}
 	tx := Transaction{From: req.From, To: req.To, Amount: req.Amount, PubKey: fmt.Sprintf("%x", pubKey)}
@@ -228,11 +284,32 @@ func handleCreateWallet(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+func txMessage(tx Transaction) string {
+	return tx.From + tx.To + fmt.Sprintf("%.4f", tx.Amount)
+}
+
+func VerifyTransactionSignature(tx Transaction) bool {
+	hash := sha256.Sum256([]byte(txMessage(tx)))
+	pubKeyBytes, err := hex.DecodeString(tx.PubKey)
+	if err != nil || len(pubKeyBytes) != 64 {
+		return false
+	}
+	x := new(big.Int).SetBytes(pubKeyBytes[:32])
+	y := new(big.Int).SetBytes(pubKeyBytes[32:])
+	pubKey := ecdsa.PublicKey{Curve: elliptic.P256(), X: x, Y: y}
+	sigBytes, err := hex.DecodeString(tx.Signature)
+	if err != nil || len(sigBytes) < 64 {
+		return false
+	}
+	r := new(big.Int).SetBytes(sigBytes[:32])
+	s := new(big.Int).SetBytes(sigBytes[32:])
+	return ecdsa.Verify(&pubKey, hash[:], r, s)
+}
+
 func isChainValid(chain []Block) bool {
 	for i := 1; i < len(chain); i++ {
 		current := chain[i]
 		prev := chain[i-1]
-
 		if current.Hash != calculateHash(current) {
 			log.Println("❌ 區塊", i, "的 Hash 不正確")
 			return false
@@ -245,18 +322,39 @@ func isChainValid(chain []Block) bool {
 	return true
 }
 
+func withCORS(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		h(w, r)
+	}
+}
+
 func main() {
 	loadBlockchainFromFile()
-	http.HandleFunc("/blocks", handleGetBlocks)
-	http.HandleFunc("/balance/", handleGetBalance)
-	http.HandleFunc("/add", handleAddBlock)
-	http.HandleFunc("/mine", handleMine)
-	http.HandleFunc("/faucet", handleFaucet)
-	http.HandleFunc("/signTx", handleSignTx)
-	http.HandleFunc("/createWallet", handleCreateWallet)
+	http.HandleFunc("/blocks", withCORS(handleGetBlocks))
+	http.HandleFunc("/balance/", withCORS(handleGetBalance))
+	http.HandleFunc("/add", withCORS(handleAddBlock))
+	http.HandleFunc("/mine", withCORS(handleMine))
+	http.HandleFunc("/faucet", withCORS(handleFaucet))
+	http.HandleFunc("/signTx", withCORS(handleSignTx))
+	http.HandleFunc("/createWallet", withCORS(handleCreateWallet))
+	http.HandleFunc("/peers", withCORS(handlePeers))
+	http.HandleFunc("/sync", withCORS(handleSync))
+	http.HandleFunc("/receive", withCORS(handleReceive))
 	log.Println("✅ 區塊鏈伺服器啟動：http://localhost:8080")
 	if !isChainValid(blockchain) {
 		log.Fatal("❌ 區塊鏈驗證失敗")
 	}
-	http.ListenAndServe(":8080", nil)
+
+	port := ":8080"
+	if len(os.Args) > 1 && strings.HasPrefix(os.Args[1], "-port=") {
+		port = ":" + strings.TrimPrefix(os.Args[1], "-port=")
+	}
+	http.ListenAndServe(port, nil)
 }
