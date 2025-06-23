@@ -177,15 +177,24 @@ func handleMine(w http.ResponseWriter, r *http.Request) {
 
 func handleFaucet(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		To string `json:"to"`
+		To     string  `json:"to"`
+		Amount float64 `json:"amount"` // Optional: 可從前端傳入
 	}
-	json.NewDecoder(r.Body).Decode(&req)
-	tx := Transaction{From: "SYSTEM", To: req.To, Amount: 100}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.To == "" {
+		http.Error(w, "請提供有效地址", http.StatusBadRequest)
+		return
+	}
+	if req.Amount <= 0 {
+		req.Amount = 100 // 預設發 100
+	}
+	tx := Transaction{From: "SYSTEM", To: req.To, Amount: req.Amount}
 	txPool = append(txPool, tx)
+
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"message": "系統將發送 100 tokens",
+		"message": "已請求 Faucet，等待礦工打包",
 		"status":  "queued",
 		"to":      req.To,
+		"amount":  req.Amount,
 	})
 }
 
@@ -272,14 +281,42 @@ func handleSignTx(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(tx)
 }
 
+func handleTxHistory(w http.ResponseWriter, r *http.Request) {
+	addr := strings.TrimPrefix(r.URL.Path, "/txs/")
+	var result []Transaction
+	for _, block := range blockchain {
+		for _, tx := range block.Txs {
+			if tx.From == addr || tx.To == addr {
+				result = append(result, tx)
+			}
+		}
+	}
+	json.NewEncoder(w).Encode(result)
+}
+
 func handleCreateWallet(w http.ResponseWriter, r *http.Request) {
-	priv, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	// 產生 ECDSA 金鑰對
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		http.Error(w, "無法產生金鑰", http.StatusInternalServerError)
+		return
+	}
+
+	// 計算公鑰與地址
 	pubKey := append(priv.PublicKey.X.Bytes(), priv.PublicKey.Y.Bytes()...)
-	address := sha256.Sum256(pubKey)
+	hash := sha256.Sum256(pubKey)
+	address := fmt.Sprintf("%x", hash[:20])
+
+	// 加入 balances，初始為 0
+	if _, exists := balances[address]; !exists {
+		balances[address] = 0
+	}
+
+	// 回傳私鑰、公鑰、地址
 	resp := map[string]string{
 		"privateKey": fmt.Sprintf("%x", priv.D.Bytes()),
 		"publicKey":  fmt.Sprintf("%x", pubKey),
-		"address":    fmt.Sprintf("%x", address[:20]),
+		"address":    address,
 	}
 	json.NewEncoder(w).Encode(resp)
 }
@@ -335,6 +372,13 @@ func withCORS(h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+func handleTxPool(w http.ResponseWriter, r *http.Request) {
+	if txPool == nil {
+		txPool = []Transaction{}
+	}
+	json.NewEncoder(w).Encode(txPool)
+}
+
 func main() {
 	loadBlockchainFromFile()
 	http.HandleFunc("/blocks", withCORS(handleGetBlocks))
@@ -347,6 +391,8 @@ func main() {
 	http.HandleFunc("/peers", withCORS(handlePeers))
 	http.HandleFunc("/sync", withCORS(handleSync))
 	http.HandleFunc("/receive", withCORS(handleReceive))
+	http.HandleFunc("/txs/", withCORS(handleTxHistory))
+	http.HandleFunc("/txpool", withCORS(handleTxPool))
 	log.Println("✅ 區塊鏈伺服器啟動：http://localhost:8080")
 	if !isChainValid(blockchain) {
 		log.Fatal("❌ 區塊鏈驗證失敗")
