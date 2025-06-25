@@ -1,16 +1,18 @@
 // src/pages/Home.js
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import WalletPanel from "../components/wallet/WalletPanel";
 import axios from "axios";
 import { toast } from "react-toastify";
+import { getAPI } from "../lib/api";
 
 export default function Home() {
     const [wallet, setWallet] = useState(null);
     const [balance, setBalance] = useState(null);
+    const api = useMemo(() => getAPI(), []);
 
     const createWallet = async () => {
         try {
-            const res = await axios.post("http://localhost:8080/createWallet");
+            const res = await axios.post(`${api}/createWallet`);
             const newWallet = res.data;
 
             // 加入本地錢包列表
@@ -35,22 +37,22 @@ export default function Home() {
         }
 
         try {
-            const res = await axios.post("http://localhost:8080/faucet", { to: minerAddress });
+            const res = await axios.post(`${api}/faucet`, { to: minerAddress });
             toast.success(res.data.message || "已成功獲得測試幣");
         } catch {
             toast.error("獲得測試幣失敗");
         }
     };
 
-    const getBalance = async (addr) => {
+    const getBalance = useCallback(async (addr) => {
         if (!addr) return;
         try {
-            const res = await axios.get(`http://localhost:8080/balance/${addr}`);
+            const res = await axios.get(`${api}/balance/${addr}`);
             setBalance(res.data.balance);
         } catch {
             toast.error("查詢失敗");
         }
-    };
+    }, [api]);
 
     useEffect(() => {
         const saved = localStorage.getItem("minerAddress");
@@ -58,7 +60,7 @@ export default function Home() {
             setWallet({ address: saved });
             getBalance(saved);
         }
-    }, []);
+    }, [getBalance]);
 
     return (
         <div className="p-6 max-w-xl mx-auto">

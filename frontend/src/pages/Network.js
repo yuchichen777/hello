@@ -1,14 +1,16 @@
 // src/pages/Network.js
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import axios from "axios";
+import { getAPI } from "../lib/api";
 
 export default function Network() {
     const [peerUrl, setPeerUrl] = useState("");
     const [message, setMessage] = useState("");
+    const api = useMemo(() => getAPI(), []);
 
     const addPeer = async () => {
         try {
-            const res = await axios.post("http://localhost:8080/peers", { url: peerUrl });
+            const res = await axios.post(`${api}/peers`, { url: peerUrl });
             setMessage(res.data.message || "已加入節點");
             setPeerUrl("");
         } catch {
@@ -18,7 +20,7 @@ export default function Network() {
 
     const syncPeers = async () => {
         try {
-            const res = await axios.get("http://localhost:8080/sync");
+            const res = await axios.get(`${api}/sync`);
             setMessage(res.data.message || "✅ 同步完成");
         } catch {
             setMessage("❌ 同步失敗");

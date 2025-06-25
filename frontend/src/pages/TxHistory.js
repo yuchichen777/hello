@@ -1,8 +1,9 @@
 // src/pages/TxHistory.js
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import axios from "axios";
 import WalletSelector from "../components/wallet/WalletSelector";
 import { Link } from "react-router-dom";
+import { getAPI } from "../lib/api";
 
 export default function TxHistory() {
     const [address, setAddress] = useState("");
@@ -10,20 +11,21 @@ export default function TxHistory() {
     const [search, setSearch] = useState("");
     const [statusFilter, setStatusFilter] = useState("all");
     const [minAmount, setMinAmount] = useState("");
+    const api = useMemo(() => getAPI(), []);
 
-    useEffect(() => {
-        if (address) fetchHistory(address);
-    }, [address]);
-
-    const fetchHistory = async (addr) => {
+    const fetchHistory = useCallback(async (addr) => {
         try {
-            const res = await axios.get(`http://localhost:8080/txs/${addr}`);
+            const res = await axios.get(`${api}/txs/${addr}`);
             const sorted = (res.data || []).sort((a, b) => b.timestamp - a.timestamp);
             setTxs(sorted);
         } catch {
             setTxs([]);
         }
-    };
+    }, [api]);
+
+    useEffect(() => {
+        if (address) fetchHistory(address);
+    }, [fetchHistory, address]);
 
     const filteredTxs = txs.filter((tx) => {
         const matchSearch = search === "" || tx.to.includes(search) || tx.from.includes(search);

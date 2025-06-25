@@ -1,35 +1,37 @@
 // src/pages/TxPool.js
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import axios from "axios";
 import { Button } from "../components/ui/button";
 import { toast } from "react-toastify";
 import { useNavigate, Link } from "react-router-dom";
+import { getAPI } from "../lib/api";
 
 export default function TxPool() {
     const [txs, setTxs] = useState([]);
     const navigate = useNavigate(); // ← 初始化導航
     const [loading, setLoading] = useState(true);
+    const api = useMemo(() => getAPI(), []); // ← 使用 getAPI 獲取 API 基礎路徑
 
-    useEffect(() => {
-        fetchTxPool();
-    }, []);
-
-    const fetchTxPool = async () => {
+    const fetchTxPool = useCallback(async () => {
         try {
-            const res = await axios.get("http://localhost:8080/txpool");
+            const res = await axios.get(`${api}/txpool`);
             setTxs(res.data);
         } catch (err) {
             toast.error("載入交易池失敗");
         } finally {
             setLoading(false);
         }
-    };
+    }, [api]);
+
+    useEffect(() => {
+        fetchTxPool();
+    }, [fetchTxPool]);
 
     const mineNow = async () => {
         const miner = localStorage.getItem("minerAddress");
         if (!miner) return toast.error("請先建立錢包");
         try {
-            const res = await axios.post(`http://localhost:8080/mine?miner=${miner}`);
+            const res = await axios.post(`${api}/mine?miner=${miner}`);
             toast.success(res.data.message || "已成功挖礦");
             navigate("/blocks"); // ← 打包成功跳轉
         } catch (err) {

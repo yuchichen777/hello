@@ -1,15 +1,17 @@
 // src/pages/Blocks.js
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import axios from "axios";
 import { Link } from "react-router-dom";
+import { getAPI } from "../lib/api";
 
 export default function Blocks() {
   const [blocks, setBlocks] = useState([]);
   const [expanded, setExpanded] = useState(null);
   const [loading, setLoading] = useState(true);
+  const api = useMemo(() => getAPI(), []);
 
   useEffect(() => {
-    axios.get("http://localhost:8080/blocks")
+    axios.get(`${api}/blocks`)
       .then((res) => {
         setBlocks(res.data?.reverse() || []);
       })
@@ -19,7 +21,7 @@ export default function Blocks() {
       .finally(() => {
         setLoading(false);
       });
-  }, []);
+  }, [api]);
 
   const toggleExpand = (index) => {
     setExpanded(expanded === index ? null : index);

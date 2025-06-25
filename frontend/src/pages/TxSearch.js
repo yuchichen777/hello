@@ -1,17 +1,19 @@
 // src/pages/TxSearch.js
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import axios from "axios";
+import { getAPI } from "../lib/api";
 
 export default function TxSearch() {
     const [txid, setTxid] = useState("");
     const [data, setData] = useState(null);
     const [error, setError] = useState("");
+    const api = useMemo(() => getAPI(), []);
 
     const handleSearch = async () => {
         setError("");
         setData(null);
         try {
-            const res = await axios.get(`http://localhost:8080/tx/${txid}`);
+            const res = await axios.get(`${api}/tx/${txid}`);
             setData(res.data);
         } catch {
             setError("查無此交易");
