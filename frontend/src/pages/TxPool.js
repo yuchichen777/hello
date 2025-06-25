@@ -3,7 +3,7 @@ import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { Button } from "../components/ui/button";
 import { toast } from "react-toastify";
-import { useNavigate } from "react-router-dom"; // ← 加入這行
+import { useNavigate, Link } from "react-router-dom";
 
 export default function TxPool() {
     const [txs, setTxs] = useState([]);
@@ -52,6 +52,15 @@ export default function TxPool() {
                             <p>• <strong>From:</strong> {tx?.from || "(未知)"}</p>
                             <p><strong>To:</strong> {tx?.to || "(未知)"}</p>
                             <p><strong>Amount:</strong> {tx?.amount ?? "(未填)"}</p>
+                            <p><strong>時間:</strong> {tx.timestamp ? new Date(tx.timestamp * 1000).toLocaleString() : "(無時間)"}</p>
+                            {tx.txid && (
+                                <Link
+                                    to={`/tx/${tx.txid}`}
+                                    className="text-blue-600 underline text-sm"
+                                >
+                                    查看詳細
+                                </Link>
+                            )}
                         </li>
                     ))}
                 </ul>

@@ -4,7 +4,11 @@ import { BrowserRouter as Router, Routes, Route, Link } from "react-router-dom";
 import Home from "./pages/Home";
 import Blocks from "./pages/Blocks";
 import TxPool from "./pages/TxPool";
-import SendTx from "./pages/SendTx"; 
+import SendTx from "./pages/SendTx";
+import TxHistory from './pages/TxHistory';
+import TxDetail from "./pages/TxDetail";
+import TxSearch from "./pages/TxSearch";
+import Network from "./pages/Network";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
@@ -18,6 +22,9 @@ function App() {
           <Link to="/blocks">📦 區塊列表</Link>
           <Link to="/txpool">📥 交易池</Link>
           <Link to="/sendtx">📤 送出交易</Link>
+          <Link to="/TxHistory">📜 交易紀錄</Link>
+          <Link to="/TxSearch" className="text-blue-500 underline">🔎 查詢交易</Link>
+          <Link to="/Network" className="text-blue-500 underline">🌐 節點同步</Link>
         </nav>
 
         <Routes>
@@ -25,8 +32,11 @@ function App() {
           <Route path="/blocks" element={<Blocks />} />
           <Route path="/txpool" element={<TxPool />} />
           <Route path="/sendtx" element={<SendTx />} />
+          <Route path="/TxHistory" element={<TxHistory />} />
+          <Route path="/TxSearch" element={<TxSearch />} />
+          <Route path="/Network" element={<Network />} />
+          <Route path="/tx/:txid" element={<TxDetail />} />
         </Routes>
-
         <ToastContainer position="top-center" />
       </div>
     </Router>

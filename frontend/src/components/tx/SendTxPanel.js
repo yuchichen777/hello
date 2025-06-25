@@ -3,6 +3,7 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { Button } from "../ui/button";
 import { toast } from "react-toastify";
+import { getAPI } from "../../lib/api";
 import WalletSelector from "../wallet/WalletSelector";
 
 export default function SendTxPanel() {
@@ -14,6 +15,7 @@ export default function SendTxPanel() {
   });
   const [walletList, setWalletList] = useState([]);
   const [balance, setBalance] = useState(null);
+  const api = getAPI();
 
   useEffect(() => {
     const stored = JSON.parse(localStorage.getItem("walletList") || "[]");
@@ -33,7 +35,7 @@ export default function SendTxPanel() {
     });
 
     try {
-      const res = await axios.get(`http://localhost:8080/balance/${fromAddress}`);
+      const res = await axios.get(`${api}/balance/${fromAddress}`);
       setBalance(res.data.balance);
     } catch {
       setBalance(null);
@@ -57,13 +59,14 @@ export default function SendTxPanel() {
     }
 
     try {
-      const res1 = await axios.post("http://localhost:8080/signTx", {
+      const res1 = await axios.post(`${api}/signTx`, {
         from,
         to,
         amount: parsedAmount,
         privKey,
       });
-      await axios.post("http://localhost:8080/add", res1.data);
+      console.log("簽名交易內容：", res1.data);
+      await axios.post(`${api}/add`, res1.data);
       toast.success("✅ 交易已送出並加入交易池");
       setForm({ ...form, to: "", amount: "" });
       handleFromChange(from); // 重新查餘額

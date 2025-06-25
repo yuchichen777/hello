@@ -1,28 +1,30 @@
 // src/components/WalletPanel.js
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import WalletSelector from "./WalletSelector";
 import axios from "axios";
 import { toast } from "react-toastify";
 import { Button } from "../ui/button";
+import { getAPI } from "../../lib/api";
 
 export default function WalletPanel() {
   const [wallet, setWallet] = useState(null);
   const [balance, setBalance] = useState(null);
   const [loading, setLoading] = useState(false);
+  const api = getAPI();
 
-  const getBalance = async (addr) => {
+  const getBalance = useCallback(async (addr) => {
     if (!addr) return;
     try {
-      const res = await axios.get(`http://localhost:8080/balance/${addr}`);
+      const res = await axios.get(`${api}/balance/${addr}`);
       setBalance(res.data.balance);
     } catch {
       toast.error("❌ 查詢餘額失敗");
     }
-  };
+  }, [api]);
 
   const handleCreateWallet = async () => {
     try {
-      const res = await axios.post("http://localhost:8080/createWallet");
+      const res = await axios.post(`${api}/createWallet`);
       const newWallet = res.data;
 
       const list = JSON.parse(localStorage.getItem("walletList") || "[]");
@@ -55,7 +57,7 @@ export default function WalletPanel() {
     }
     setLoading(true);
     try {
-      const res = await axios.post("http://localhost:8080/faucet", {
+      const res = await axios.post(`${api}/faucet`, {
         to: wallet.address,
       });
       toast.success(res.data.message || "✅ 測試幣已發送");
@@ -67,6 +69,14 @@ export default function WalletPanel() {
     }
   };
 
+  const handleClearWallets = () => {
+    localStorage.removeItem("walletList");
+    localStorage.removeItem("minerAddress");
+    setWallet(null);
+    setBalance(null);
+    toast.info("已清空本地錢包資料");
+  };
+
   useEffect(() => {
     const addr = localStorage.getItem("minerAddress");
     const wallets = JSON.parse(localStorage.getItem("walletList") || "[]");
@@ -75,13 +85,14 @@ export default function WalletPanel() {
       setWallet(found);
       getBalance(found.address);
     }
-  }, []);
+  }, [getBalance]);
 
   return (
     <div className="p-4 border rounded space-y-4">
       <h2 className="text-lg font-semibold">👛 錢包管理</h2>
 
       <div className="space-y-2">
+        <Button variant="outline" onClick={handleClearWallets}>🧹 清空錢包</Button>
         <Button onClick={handleCreateWallet}>➕ 建立新錢包</Button>
         <WalletSelector
           selected={wallet?.address || ""}

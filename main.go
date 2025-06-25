@@ -1,3 +1,5 @@
+// File: main.go
+// Description: A simple blockchain implementation in Go with REST API for transactions, mining, and wallet management.
 package main
 
 import (
@@ -12,6 +14,7 @@ import (
 	"math/big"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -32,6 +35,8 @@ type Transaction struct {
 	Amount    float64 `json:"amount"`
 	PubKey    string  `json:"pubKey"`
 	Signature string  `json:"signature"`
+	Timestamp int64   `json:"timestamp"`
+	TxID      string  `json:"txid"`
 }
 
 var (
@@ -41,6 +46,49 @@ var (
 	peers      []string
 	dataFile   = "blockchain.json"
 )
+
+func handleGetTxByID(w http.ResponseWriter, r *http.Request) {
+	txid := strings.TrimPrefix(r.URL.Path, "/tx/")
+	if txid == "" {
+		http.Error(w, "缺少 txid", http.StatusBadRequest)
+		return
+	}
+
+	// 先查打包的區塊
+	for _, block := range blockchain {
+		for _, tx := range block.Txs {
+			if tx.TxID == txid {
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"status":    "confirmed",
+					"tx":        tx,
+					"timestamp": tx.Timestamp,
+					"block":     block.Index,
+				})
+				return
+			}
+		}
+	}
+
+	// 查交易池
+	for _, tx := range txPool {
+		if tx.TxID == txid {
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"status":    "pending",
+				"tx":        tx,
+				"timestamp": tx.Timestamp,
+			})
+			return
+		}
+	}
+
+	http.Error(w, "找不到交易", http.StatusNotFound)
+}
+
+func generateTxID(tx Transaction) string {
+	input := tx.From + tx.To + fmt.Sprintf("%.4f", tx.Amount) + fmt.Sprintf("%d", tx.Timestamp) + tx.Signature
+	hash := sha256.Sum256([]byte(input))
+	return fmt.Sprintf("%x", hash[:])
+}
 
 func calculateHash(block Block) string {
 	record := strconv.Itoa(block.Index) + block.Timestamp + block.PrevHash + strconv.Itoa(block.Nonce)
@@ -187,14 +235,17 @@ func handleFaucet(w http.ResponseWriter, r *http.Request) {
 	if req.Amount <= 0 {
 		req.Amount = 100 // 預設發 100
 	}
-	tx := Transaction{From: "SYSTEM", To: req.To, Amount: req.Amount}
+	tx := Transaction{From: "SYSTEM", To: req.To, Amount: req.Amount, Timestamp: time.Now().Unix()}
+	tx.TxID = generateTxID(tx)
 	txPool = append(txPool, tx)
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"message": "已請求 Faucet，等待礦工打包",
-		"status":  "queued",
-		"to":      req.To,
-		"amount":  req.Amount,
+		"message":   "已請求 Faucet，等待礦工打包",
+		"status":    "queued",
+		"to":        req.To,
+		"amount":    req.Amount,
+		"txid":      tx.TxID,
+		"timestamp": tx.Timestamp,
 	})
 }
 
@@ -273,24 +324,67 @@ func handleSignTx(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "❌ From 地址與私鑰不符", http.StatusForbidden)
 		return
 	}
-	tx := Transaction{From: req.From, To: req.To, Amount: req.Amount, PubKey: fmt.Sprintf("%x", pubKey)}
+	tx := Transaction{From: req.From, To: req.To, Amount: req.Amount, PubKey: fmt.Sprintf("%x", pubKey), Timestamp: time.Now().Unix()}
 	hash := sha256.Sum256([]byte(txMessage(tx)))
 	rSig, sSig, _ := ecdsa.Sign(rand.Reader, priv, hash[:])
 	sig := append(rSig.Bytes(), sSig.Bytes()...)
 	tx.Signature = fmt.Sprintf("%x", sig)
+	tx.TxID = generateTxID(tx)
 	json.NewEncoder(w).Encode(tx)
 }
 
 func handleTxHistory(w http.ResponseWriter, r *http.Request) {
 	addr := strings.TrimPrefix(r.URL.Path, "/txs/")
-	var result []Transaction
+	var result []map[string]interface{}
+
+	// 找出交易池中尚未打包的交易
+	inPool := func(tx Transaction) bool {
+		for _, pending := range txPool {
+			if tx.From == pending.From && tx.To == pending.To && tx.Amount == pending.Amount && tx.Timestamp == pending.Timestamp {
+				return true
+			}
+		}
+		return false
+	}
+
+	// 掃區塊鏈內所有交易
 	for _, block := range blockchain {
 		for _, tx := range block.Txs {
 			if tx.From == addr || tx.To == addr {
-				result = append(result, tx)
+				status := "confirmed"
+				if inPool(tx) {
+					status = "pending"
+				}
+				result = append(result, map[string]interface{}{
+					"from":      tx.From,
+					"to":        tx.To,
+					"amount":    tx.Amount,
+					"status":    status,
+					"timestamp": tx.Timestamp,
+					"txid":      tx.TxID,
+				})
 			}
 		}
 	}
+
+	// 額外加入純粹在 pool 中、還未進區塊鏈的
+	for _, tx := range txPool {
+		if tx.From == addr || tx.To == addr {
+			result = append(result, map[string]interface{}{
+				"from":      tx.From,
+				"to":        tx.To,
+				"amount":    tx.Amount,
+				"status":    "pending",
+				"timestamp": tx.Timestamp,
+				"txid":      tx.TxID,
+			})
+		}
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i]["timestamp"].(int64) > result[j]["timestamp"].(int64)
+	})
+
 	json.NewEncoder(w).Encode(result)
 }
 
@@ -322,7 +416,7 @@ func handleCreateWallet(w http.ResponseWriter, r *http.Request) {
 }
 
 func txMessage(tx Transaction) string {
-	return tx.From + tx.To + fmt.Sprintf("%.4f", tx.Amount)
+	return fmt.Sprintf("%s%s%.4f%d", tx.From, tx.To, tx.Amount, tx.Timestamp)
 }
 
 func VerifyTransactionSignature(tx Transaction) bool {
@@ -393,14 +487,19 @@ func main() {
 	http.HandleFunc("/receive", withCORS(handleReceive))
 	http.HandleFunc("/txs/", withCORS(handleTxHistory))
 	http.HandleFunc("/txpool", withCORS(handleTxPool))
-	log.Println("✅ 區塊鏈伺服器啟動：http://localhost:8080")
+	http.HandleFunc("/tx/", withCORS(handleGetTxByID))
+	
+	// 預設 port
+	port := "8080"
+	if len(os.Args) > 1 && strings.HasPrefix(os.Args[1], "-port=") {
+		port = strings.TrimPrefix(os.Args[1], "-port=")
+	}
+
+	log.Printf("✅ 區塊鏈伺服器啟動：http://localhost:%s\n", port)
+
 	if !isChainValid(blockchain) {
 		log.Fatal("❌ 區塊鏈驗證失敗")
 	}
 
-	port := ":8080"
-	if len(os.Args) > 1 && strings.HasPrefix(os.Args[1], "-port=") {
-		port = ":" + strings.TrimPrefix(os.Args[1], "-port=")
-	}
-	http.ListenAndServe(port, nil)
+	http.ListenAndServe(":"+port, nil)
 }

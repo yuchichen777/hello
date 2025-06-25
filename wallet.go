@@ -1,3 +1,5 @@
+// File: wallet.go
+// Description: A simple wallet implementation in Go that can create a wallet, generate an address,
 package main
 
 import (

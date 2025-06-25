@@ -1,6 +1,7 @@
 // src/pages/Blocks.js
 import React, { useEffect, useState } from "react";
 import axios from "axios";
+import { Link } from "react-router-dom";
 
 export default function Blocks() {
   const [blocks, setBlocks] = useState([]);
@@ -69,6 +70,11 @@ export default function Blocks() {
                             <span className="font-bold">From:</span> {tx.from} →{" "}
                             <span className="font-bold">To:</span> {tx.to},{" "}
                             <span className="font-bold">Amount:</span> {tx.amount}
+                            {tx.txid && (
+                              <Link to={`/tx/${tx.txid}`} className="text-blue-600 underline ml-2 text-sm">
+                                查看詳細
+                              </Link>
+                            )}
                           </div>
                         </li>
                       ))}
