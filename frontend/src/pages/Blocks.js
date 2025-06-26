@@ -1,5 +1,5 @@
 // src/pages/Blocks.js
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { Link } from "react-router-dom";
 import { getAPI } from "../lib/api";
@@ -8,7 +8,7 @@ export default function Blocks() {
   const [blocks, setBlocks] = useState([]);
   const [expanded, setExpanded] = useState(null);
   const [loading, setLoading] = useState(true);
-  const api = useMemo(() => getAPI(), []);
+  const api = getAPI();
 
   useEffect(() => {
     axios.get(`${api}/blocks`)

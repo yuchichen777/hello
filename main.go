@@ -45,7 +45,60 @@ var (
 	txPool     []Transaction
 	peers      []string
 	dataFile   = "blockchain.json"
+	peerFile   = "peers.json"
+	selfPort   = "8080"
+	selfURL    = ""
 )
+
+func savePeersToFile() {
+	file, err := os.Create(peerFile)
+	if err != nil {
+		log.Println("❌ 無法儲存 peers.json:", err)
+		return
+	}
+	defer file.Close()
+	json.NewEncoder(file).Encode(peers)
+}
+
+func loadPeersFromFile() {
+	file, err := os.Open(peerFile)
+	if err != nil {
+		log.Println("⚠️ 找不到 peers.json，使用預設節點")
+		peers = defaultPeers()
+		savePeersToFile()
+		return
+	}
+	defer file.Close()
+
+	if err := json.NewDecoder(file).Decode(&peers); err != nil || len(peers) == 0 {
+		log.Println("⚠️ peers.json 空或格式錯誤，使用預設節點")
+		peers = defaultPeers()
+		savePeersToFile()
+	}
+
+	// 若 peers 沒有包含 localhost:8080，則補上
+	found := false
+	for _, p := range peers {
+		if p == "http://localhost:8080" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		peers = append(peers, "http://localhost:8080")
+		savePeersToFile()
+	}
+
+	// 移除與自身相同的 peer
+	selfURL := fmt.Sprintf("http://localhost:%s", selfPort)
+	filtered := []string{}
+	for _, peer := range peers {
+		if peer != selfURL {
+			filtered = append(filtered, peer)
+		}
+	}
+	peers = filtered
+}
 
 func handleGetTxByID(w http.ResponseWriter, r *http.Request) {
 	txid := strings.TrimPrefix(r.URL.Path, "/tx/")
@@ -194,6 +247,31 @@ func handleAddBlock(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"message": "交易加入池中"})
 }
 
+func txConfirmed(txid string) bool {
+	for _, block := range blockchain {
+		for _, tx := range block.Txs {
+			if tx.TxID == txid {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func filterUnconfirmedOnly(pool []Transaction, confirmed []Transaction) []Transaction {
+	c := make(map[string]bool)
+	for _, tx := range confirmed {
+		c[tx.TxID] = true
+	}
+	result := []Transaction{}
+	for _, tx := range pool {
+		if !c[tx.TxID] {
+			result = append(result, tx)
+		}
+	}
+	return result
+}
+
 func handleMine(w http.ResponseWriter, r *http.Request) {
 	miner := r.URL.Query().Get("miner")
 	if miner == "" {
@@ -204,21 +282,35 @@ func handleMine(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "交易池為空", http.StatusBadRequest)
 		return
 	}
-	validTxs := []Transaction{}
+
+	// 排除已存在區塊鏈中的交易
+	filtered := []Transaction{}
 	for _, tx := range txPool {
-		if isTransactionValid(tx) {
-			validTxs = append(validTxs, tx)
+		if isTransactionValid(tx) && !txConfirmed(tx.TxID) {
+			filtered = append(filtered, tx)
 		}
 	}
-	reward := Transaction{From: "SYSTEM", To: miner, Amount: 10}
-	validTxs = append(validTxs, reward)
-	newBlock := mineBlock(blockchain[len(blockchain)-1], validTxs, 3)
+
+	if len(filtered) == 0 {
+		http.Error(w, "無有效交易可打包", http.StatusBadRequest)
+		return
+	}
+
+	// 加上礦工獎勵
+	reward := Transaction{From: "SYSTEM", To: miner, Amount: 10, Timestamp: time.Now().Unix()}
+	reward.TxID = generateTxID(reward)
+	filtered = append(filtered, reward)
+
+	newBlock := mineBlock(blockchain[len(blockchain)-1], filtered, 3)
 	blockchain = append(blockchain, newBlock)
-	for _, tx := range validTxs {
+	for _, tx := range filtered {
 		applyTransaction(tx)
 	}
-	txPool = []Transaction{}
 	saveBlockchainToFile()
+
+	// 移除已打包的交易
+	txPool = filterUnconfirmedOnly(txPool, newBlock.Txs)
+
 	broadcastBlock(newBlock)
 	json.NewEncoder(w).Encode(map[string]string{"message": "挖礦成功，已打包交易與獎勵"})
 }
@@ -250,12 +342,48 @@ func handleFaucet(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlePeers(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		json.NewEncoder(w).Encode(peers)
+		return
+	}
+
 	var req struct {
 		URL string `json:"url"`
 	}
 	json.NewDecoder(r.Body).Decode(&req)
+
+	selfURL := fmt.Sprintf("http://localhost:%s", selfPort)
+	if req.URL == selfURL {
+		http.Error(w, "❌ 無法加入自己作為節點", http.StatusBadRequest)
+		return
+	}
+
+	// 避免重複加入
+	for _, peer := range peers {
+		if peer == req.URL {
+			json.NewEncoder(w).Encode(map[string]string{
+				"message": "節點已存在", "peer": req.URL,
+			})
+			return
+		}
+	}
+
 	peers = append(peers, req.URL)
-	json.NewEncoder(w).Encode(map[string]string{"message": "已新增節點", "peer": req.URL})
+	savePeersToFile()
+	json.NewEncoder(w).Encode(map[string]string{"message": "✅ 已新增節點", "peer": req.URL})
+}
+
+func defaultPeers() []string {
+	return []string{"http://localhost:8080"}
+}
+
+func txExists(tx Transaction) bool {
+	for _, existing := range txPool {
+		if tx.TxID == existing.TxID {
+			return true
+		}
+	}
+	return false
 }
 
 func handleSync(w http.ResponseWriter, r *http.Request) {
@@ -272,6 +400,20 @@ func handleSync(w http.ResponseWriter, r *http.Request) {
 			rebuildBalancesFromBlockchain()
 			saveBlockchainToFile()
 			log.Println("🔁 區塊鏈已同步自：", peer)
+		}
+
+		// 同步交易池
+		txResp, err := http.Get(peer + "/txpool")
+		if err == nil {
+			var remotePool []Transaction
+			json.NewDecoder(txResp.Body).Decode(&remotePool)
+			txResp.Body.Close()
+
+			for _, tx := range remotePool {
+				if isTransactionValid(tx) && !txExists(tx) {
+					txPool = append(txPool, tx)
+				}
+			}
 		}
 	}
 	json.NewEncoder(w).Encode(map[string]string{"message": "同步完成"})
@@ -475,6 +617,15 @@ func handleTxPool(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	loadBlockchainFromFile()
+
+	// 解析 port
+	selfPort = "8080"
+	if len(os.Args) > 1 && strings.HasPrefix(os.Args[1], "-port=") {
+		selfPort = strings.TrimPrefix(os.Args[1], "-port=")
+	}
+	selfURL = fmt.Sprintf("http://localhost:%s", selfPort)
+
+	loadPeersFromFile()
 	http.HandleFunc("/blocks", withCORS(handleGetBlocks))
 	http.HandleFunc("/balance/", withCORS(handleGetBalance))
 	http.HandleFunc("/add", withCORS(handleAddBlock))
@@ -488,14 +639,14 @@ func main() {
 	http.HandleFunc("/txs/", withCORS(handleTxHistory))
 	http.HandleFunc("/txpool", withCORS(handleTxPool))
 	http.HandleFunc("/tx/", withCORS(handleGetTxByID))
-	
+
 	// 預設 port
 	port := "8080"
 	if len(os.Args) > 1 && strings.HasPrefix(os.Args[1], "-port=") {
 		port = strings.TrimPrefix(os.Args[1], "-port=")
 	}
 
-	log.Printf("✅ 區塊鏈伺服器啟動：http://localhost:%s\n", port)
+	log.Printf("✅ 區塊鏈伺服器啟動：%s\n", selfURL)
 
 	if !isChainValid(blockchain) {
 		log.Fatal("❌ 區塊鏈驗證失敗")

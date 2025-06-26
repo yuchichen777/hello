@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axios from "axios";
 import { getAPI } from "../lib/api";
@@ -7,7 +7,7 @@ export default function TxDetail() {
     const { txid } = useParams();
     const [data, setData] = useState(null);
     const [err, setErr] = useState(null);
-    const api = useMemo(() => getAPI(), []);
+    const api = getAPI();
 
     useEffect(() => {
         axios.get(`${api}/tx/${txid}`)

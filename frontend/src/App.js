@@ -9,6 +9,7 @@ import TxHistory from './pages/TxHistory';
 import TxDetail from "./pages/TxDetail";
 import TxSearch from "./pages/TxSearch";
 import Network from "./pages/Network";
+import NodeSelector from "./components/node/NodeSelector";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
@@ -25,6 +26,7 @@ function App() {
           <Link to="/TxHistory">📜 交易紀錄</Link>
           <Link to="/TxSearch" className="text-blue-500 underline">🔎 查詢交易</Link>
           <Link to="/Network" className="text-blue-500 underline">🌐 節點同步</Link>
+          <NodeSelector />
         </nav>
 
         <Routes>

@@ -1,5 +1,5 @@
 // src/components/SendTxPanel.js
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { Button } from "../ui/button";
 import { toast } from "react-toastify";
@@ -15,7 +15,7 @@ export default function SendTxPanel() {
   });
   const [walletList, setWalletList] = useState([]);
   const [balance, setBalance] = useState(null);
-  const api = useMemo(() => getAPI(), []);
+  const api = getAPI();
 
   useEffect(() => {
     const stored = JSON.parse(localStorage.getItem("walletList") || "[]");

@@ -1,5 +1,5 @@
 // src/pages/TxSearch.js
-import React, { useState, useMemo } from "react";
+import React, { useState } from "react";
 import axios from "axios";
 import { getAPI } from "../lib/api";
 
@@ -7,7 +7,7 @@ export default function TxSearch() {
     const [txid, setTxid] = useState("");
     const [data, setData] = useState(null);
     const [error, setError] = useState("");
-    const api = useMemo(() => getAPI(), []);
+    const api = getAPI();
 
     const handleSearch = async () => {
         setError("");

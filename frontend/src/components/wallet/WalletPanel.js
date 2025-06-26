@@ -1,5 +1,5 @@
 // src/components/WalletPanel.js
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import WalletSelector from "./WalletSelector";
 import axios from "axios";
 import { toast } from "react-toastify";
@@ -10,7 +10,7 @@ export default function WalletPanel() {
   const [wallet, setWallet] = useState(null);
   const [balance, setBalance] = useState(null);
   const [loading, setLoading] = useState(false);
-  const api = useMemo(() => getAPI(), []);
+  const api = getAPI();
 
   const getBalance = useCallback(async (addr) => {
     if (!addr) return;

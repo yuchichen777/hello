@@ -1,5 +1,5 @@
 // src/pages/TxPool.js
-import React, { useEffect, useState, useMemo, useCallback } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import axios from "axios";
 import { Button } from "../components/ui/button";
 import { toast } from "react-toastify";
@@ -10,7 +10,7 @@ export default function TxPool() {
     const [txs, setTxs] = useState([]);
     const navigate = useNavigate(); // ← 初始化導航
     const [loading, setLoading] = useState(true);
-    const api = useMemo(() => getAPI(), []); // ← 使用 getAPI 獲取 API 基礎路徑
+    const api = getAPI(); // ← 使用 getAPI 獲取 API 基礎路徑
 
     const fetchTxPool = useCallback(async () => {
         try {

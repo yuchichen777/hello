@@ -1,5 +1,5 @@
 // src/pages/TxHistory.js
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import WalletSelector from "../components/wallet/WalletSelector";
 import { Link } from "react-router-dom";
@@ -11,7 +11,7 @@ export default function TxHistory() {
     const [search, setSearch] = useState("");
     const [statusFilter, setStatusFilter] = useState("all");
     const [minAmount, setMinAmount] = useState("");
-    const api = useMemo(() => getAPI(), []);
+    const api = getAPI();
 
     const fetchHistory = useCallback(async (addr) => {
         try {

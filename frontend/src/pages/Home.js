@@ -1,5 +1,5 @@
 // src/pages/Home.js
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import WalletPanel from "../components/wallet/WalletPanel";
 import axios from "axios";
 import { toast } from "react-toastify";
@@ -8,7 +8,7 @@ import { getAPI } from "../lib/api";
 export default function Home() {
     const [wallet, setWallet] = useState(null);
     const [balance, setBalance] = useState(null);
-    const api = useMemo(() => getAPI(), []);
+    const api = getAPI();
 
     const createWallet = async () => {
         try {
